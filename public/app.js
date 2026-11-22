@@ -16,29 +16,46 @@ async function fetchJSON(url, opts = {}) {
 /* ---------- Environment ---------- */
 async function loadEnvironments() {
   const envSelect = document.getElementById('env-select');
-  const envs = await fetchJSON(`${API_BASE}/environments`);
-  envSelect.innerHTML = '';
-  envs.forEach(e => {
-    const opt = document.createElement('option');
-    opt.value = e;
-    opt.textContent = e;
-    envSelect.appendChild(opt);
-  });
-  const stats = await fetchJSON(`${API_BASE}/stats`);
-  envSelect.value = stats.currentEnvironment;
-  // display current env in panel (used on Environments page)
-  const currentEnvEl = document.getElementById('current-env');
-  if (currentEnvEl) currentEnvEl.textContent = stats.currentEnvironment;
-
-  // listen for changes
-  envSelect.addEventListener('change', async (e) => {
-    await fetchJSON(`${API_BASE}/environment`, {
-      method: 'POST',
-      body: JSON.stringify({ environment: e.target.value }),
+  try {
+    // Show a loading placeholder
+    envSelect.innerHTML = '<option>Loading…</option>';
+    const envs = await fetchJSON(`${API_BASE}/environments`);
+    // Populate options
+    envSelect.innerHTML = '';
+    envs.forEach(e => {
+      const opt = document.createElement('option');
+      opt.value = e;
+      opt.textContent = e.charAt(0).toUpperCase() + e.slice(1);
+      envSelect.appendChild(opt);
     });
-    await refreshAll();
-    showToast(`Switched to ${e.target.value}`);
-  });
+    // Get current environment from stats (fallback to "development")
+    const stats = await fetchJSON(`${API_BASE}/stats`);
+    const currentEnv = stats.currentEnvironment || 'development';
+    envSelect.value = currentEnv;
+    // reflected in any UI element
+    const currentEnvEl = document.getElementById('current-env');
+    if (currentEnvEl) currentEnvEl.textContent = currentEnv;
+    // Listen for changes
+    envSelect.addEventListener('change', async (e) => {
+      const newEnv = e.target.value;
+      try {
+        await fetchJSON(`${API_BASE}/environment`, {
+          method: 'POST',
+          body: JSON.stringify({ environment: newEnv })
+        });
+        // Refresh all data after successful switch
+        await refreshAll();
+        showToast(`Switched to ${newEnv}`);
+      } catch (err) {
+        console.error('Environment switch error:', err);
+        showToast(`Failed to switch environment: ${err.message}`, 'error');
+      }
+    });
+  } catch (err) {
+    console.error('Failed to load environments:', err);
+    envSelect.innerHTML = '<option value="" disabled>Error loading environments</option>';
+    showToast('Could not load environments list', 'error');
+  }
 }
 
 /* ---------- Navigation & Sidebar ---------- */
@@ -98,7 +115,6 @@ async function loadFlags() {
       </td>
     `;
     tbody.appendChild(tr);
-
     const opt = document.createElement('option');
     opt.value = f.key;
     opt.textContent = f.key;
@@ -114,7 +130,7 @@ function attachFlagButtons() {
       const flag = await fetchJSON(`${API_BASE}/flags/${key}`);
       await fetchJSON(`${API_BASE}/flags/${key}`, {
         method: 'PATCH',
-        body: JSON.stringify({ enabled: !flag.enabled }),
+        body: JSON.stringify({ enabled: !flag.enabled })
       });
       await refreshAll();
     };
@@ -136,7 +152,7 @@ document.getElementById('create-flag-btn').addEventListener('click', async () =>
   if (!key) return;
   const enabled = confirm('Enable flag by default?');
   const rollout = prompt('Rollout percentage (0‑100) or leave blank:');
-  const targets = prompt('Targets JSON (e.g. [{"userId":"alice"}] ) or leave blank:');
+  const targets = prompt('Targets JSON (e.g. [{\"userId\":\"alice\"}] ) or leave blank:');
   const body = { key, enabled };
   if (rollout) body.rolloutPercentage = Number(rollout);
   if (targets) {
@@ -163,7 +179,7 @@ document.getElementById('evaluate-btn').addEventListener('click', async () => {
   try {
     const result = await fetchJSON(`${API_BASE}/evaluate/${key}`, {
       method: 'POST',
-      body: JSON.stringify({ userId, attributes }),
+      body: JSON.stringify({ userId, attributes })
     });
     const out = document.getElementById('eval-result');
     out.textContent = `Enabled: ${result.enabled} (Reason: ${result.reason})`;
@@ -179,18 +195,64 @@ document.getElementById('evaluate-btn').addEventListener('click', async () => {
 let flagsDistChart = null;
 let evalActivityChart = null;
 
+// Custom plugin to display total count in the center of the doughnut chart
+const centerTextPlugin = {
+  id: 'centerText',
+  afterDraw(chart) {
+    if (chart.config.type !== 'doughnut') return;
+    const { ctx, chartArea: { left, width, top, height } } = chart;
+    ctx.save();
+    const total = chart.config.data.datasets[0].data.reduce((a, b) => a + b, 0);
+    ctx.font = 'bold 1.2rem Inter';
+    ctx.fillStyle = '#333';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(total, left + width / 2, top + height / 2);
+    ctx.restore();
+  }
+};
+
 function renderFlagDistributionChart(enabled, disabled) {
-  const ctx = document.getElementById('flags-distribution-chart').getContext('2d');
+  const canvas = document.getElementById('flags-distribution-chart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
   const data = {
     labels: ['Enabled', 'Disabled'],
     datasets: [{ data: [enabled, disabled], backgroundColor: ['#28a745', '#dc3545'] }]
   };
   if (flagsDistChart) flagsDistChart.destroy();
-  flagsDistChart = new Chart(ctx, { type: 'doughnut', data, options: { responsive: true, maintainAspectRatio: false } });
+  flagsDistChart = new Chart(ctx, {
+    type: 'doughnut',
+    data,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom' },
+        title: { display: true, text: 'Flag Distribution', font: { size: 16 } },
+        tooltip: { enabled: true },
+        centerText: {}
+      }
+    },
+    plugins: [centerTextPlugin]
+  });
 }
 
 function renderEvaluationActivityChart(evals) {
-  const ctx = document.getElementById('evaluation-activity-chart').getContext('2d');
+  const container = document.getElementById('evaluation-activity-chart').parentElement;
+  const existingEmpty = container.querySelector('.empty-state');
+  if (existingEmpty) existingEmpty.remove();
+  const canvas = document.getElementById('evaluation-activity-chart');
+  if (!canvas) return;
+  if (!evals || evals.length === 0) {
+    const msg = document.createElement('div');
+    msg.className = 'empty-state';
+    msg.textContent = 'No evaluations yet. Use the Evaluation Playground to evaluate your first feature flag.';
+    container.appendChild(msg);
+    canvas.style.display = 'none';
+    return;
+  }
+  canvas.style.display = 'block';
   const enabled = evals.filter(e => e.enabled).length;
   const disabled = evals.length - enabled;
   const data = {
@@ -198,7 +260,19 @@ function renderEvaluationActivityChart(evals) {
     datasets: [{ data: [enabled, disabled], backgroundColor: ['#28a745', '#dc3545'] }]
   };
   if (evalActivityChart) evalActivityChart.destroy();
-  evalActivityChart = new Chart(ctx, { type: 'pie', data, options: { responsive: true, maintainAspectRatio: false } });
+  evalActivityChart = new Chart(canvas.getContext('2d'), {
+    type: 'pie',
+    data,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom' },
+        title: { display: true, text: 'Evaluation Activity', font: { size: 16 } },
+        tooltip: { enabled: true }
+      }
+    }
+  });
 }
 
 /* ---------- Stats & Overview ---------- */
@@ -208,7 +282,6 @@ async function refreshStats() {
   document.getElementById('enabled-flags').textContent = stats.enabledFlags;
   document.getElementById('disabled-flags').textContent = stats.disabledFlags;
   document.getElementById('total-evals').textContent = stats.totalEvaluations;
-  // charts
   renderFlagDistributionChart(stats.enabledFlags, stats.disabledFlags);
   renderEvaluationActivityChart(stats.recentEvaluations || []);
 }
@@ -217,18 +290,20 @@ async function loadHistory() {
   const stats = await fetchJSON(`${API_BASE}/stats`);
   const tbody = document.getElementById('history-body');
   tbody.innerHTML = '';
-  stats.recentEvaluations.forEach(h => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${new Date(h.timestamp).toLocaleTimeString()}</td>
-      <td>${h.key}</td>
-      <td>${h.userId}</td>
-      <td>${h.environment}</td>
-      <td>${h.enabled}</td>
-      <td>${h.reason}</td>
-    `;
-    tbody.appendChild(tr);
-  });
+  if (stats.recentEvaluations) {
+    stats.recentEvaluations.forEach(h => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${new Date(h.timestamp).toLocaleTimeString()}</td>
+        <td>${h.key}</td>
+        <td>${h.userId}</td>
+        <td>${h.environment}</td>
+        <td>${h.enabled}</td>
+        <td>${h.reason}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
 }
 
 async function refreshAll() {
