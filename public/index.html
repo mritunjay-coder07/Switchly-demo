@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Switchly Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <!-- Top navigation bar -->
+  <header class="top-nav">
+    <button class="sidebar-toggle" id="sidebar-toggle" aria-label="Toggle sidebar">☰</button>
+    <div class="brand">
+      <h1>Switchly</h1>
+      <span class="subtitle">Feature Flag Management</span>
+    </div>
+    <div class="header-right">
+      <label for="env-select" class="env-label">Environment:</label>
+      <select id="env-select" class="env-select"></select>
+    </div>
+  </header>
+
+  <!-- Sidebar navigation -->
+  <nav class="sidebar" id="sidebar">
+    <div class="logo">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L2 7v10l10 5 10-5V7L12 2z" fill="#4F46E5"/></svg>
+      <span class="logo-text">Switchly</span>
+    </div>
+    <ul class="nav-list">
+      <li><a href="#overview" class="nav-link active" data-section="overview">🏠 Overview</a></li>
+      <li><a href="#flags" class="nav-link" data-section="flags">🏷️ Feature Flags</a></li>
+      <li><a href="#playground" class="nav-link" data-section="playground">🧪 Evaluation Playground</a></li>
+      <li><a href="#environments" class="nav-link" data-section="environments">⚙️ Environments</a></li>
+      <li><a href="#activity" class="nav-link" data-section="activity">📊 Activity</a></li>
+      <li><a href="https://github.com/mritunjay07/switchly" target="_blank" class="nav-link">📚 Documentation</a></li>
+    </ul>
+  </nav>
+
+  <main class="content" id="main-content">
+    <!-- Overview Section -->
+    <section id="overview" class="section">
+      <h2 class="section-title">Overview</h2>
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-icon">📦</div>
+          <div class="metric-value" id="total-flags">0</div>
+          <div class="metric-label">Total Flags</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon">✅</div>
+          <div class="metric-value" id="enabled-flags">0</div>
+          <div class="metric-label">Enabled Flags</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon">🚫</div>
+          <div class="metric-value" id="disabled-flags">0</div>
+          <div class="metric-label">Disabled Flags</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon">⚡</div>
+          <div class="metric-value" id="total-evals">0</div>
+          <div class="metric-label">Total Evaluations</div>
+        </div>
+      </div>
+      <div class="charts-grid">
+        <div class="chart-card">
+          <h3>Flag Distribution</h3>
+          <canvas id="flags-distribution-chart"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Evaluation Activity</h3>
+          <canvas id="evaluation-activity-chart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Feature Flags Section -->
+    <section id="flags" class="section hidden">
+      <h2 class="section-title">Feature Flags</h2>
+      <div class="flags-toolbar">
+        <button id="create-flag-btn" class="primary-btn">Create New Flag</button>
+        <input type="text" id="search-flag" placeholder="Search flags..." class="search-input" />
+      </div>
+      <table id="flags-table" class="data-table">
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Status</th>
+            <th>Targets</th>
+            <th>Rollout %</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <!-- Evaluation Playground Section -->
+    <section id="playground" class="section hidden">
+      <h2 class="section-title">Evaluation Playground</h2>
+      <div class="playground-form">
+        <label for="eval-flag-select">Flag:</label>
+        <select id="eval-flag-select"></select>
+        <label for="eval-user-id">User ID:</label>
+        <input type="text" id="eval-user-id" placeholder="user-123" />
+        <label for="eval-attributes">Attributes (JSON):</label>
+        <textarea id="eval-attributes" rows="3" placeholder='{"role": "admin"}'></textarea>
+        <button id="evaluate-btn" class="primary-btn">Evaluate</button>
+        <div id="eval-result" class="result"></div>
+      </div>
+    </section>
+
+    <!-- Environments Section -->
+    <section id="environments" class="section hidden">
+      <h2 class="section-title">Environments</h2>
+      <div class="env-cards">
+        <div class="env-card" data-env="development">
+          <h3>Development</h3>
+          <p>Isolated development environment.</p>
+        </div>
+        <div class="env-card" data-env="staging">
+          <h3>Staging</h3>
+          <p>Pre‑production testing environment.</p>
+        </div>
+        <div class="env-card" data-env="production">
+          <h3>Production</h3>
+          <p>Live environment for end users.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Activity Section -->
+    <section id="activity" class="section hidden">
+      <h2 class="section-title">Recent Activity</h2>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Flag</th>
+            <th>User ID</th>
+            <th>Env</th>
+            <th>Enabled</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody id="history-body"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <!-- Toast container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
