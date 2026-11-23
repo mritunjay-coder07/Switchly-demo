@@ -149,3 +149,8 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Start server (required for Vercel and local usage)
+// Removed app.listen from here – Vercel will import the app directly.
+// Export the Express app for Vercel's serverless handler.
+export default app;
+
